@@ -230,7 +230,7 @@ async function renderTeamPlay(){
       <span><i class="dot" style="background:var(--pending)"></i>Pending review</span>
       <span><i class="dot" style="background:var(--approved)"></i>Approved</span>
     </div>
-    <input type="file" accept="image/*" capture="environment" id="fileInput" style="display:none">
+    <input type="file" accept="image/*" id="fileInput" style="display:none">
   `;
   const grid = document.getElementById('grid');
   TASKS.forEach((task, i) => {
