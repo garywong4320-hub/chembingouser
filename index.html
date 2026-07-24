@@ -148,8 +148,24 @@ const app = document.getElementById('app');
 const urlParams = new URLSearchParams(window.location.search);
 const savedTeam = urlParams.get('team');
 let state = savedTeam
-  ? { view: 'team-play', teamName: savedTeam, pollTimer: null, hasFetchedOnce: false, bingoShown: false }
-  : { view: 'team-select', teamName: null, pollTimer: null, hasFetchedOnce: false, bingoShown: false };
+  ? { view: 'team-play', teamName: savedTeam, pollTimer: null }
+  : { view: 'team-select', teamName: null, pollTimer: null };
+
+// Whether this browser/device has already shown the bingo popup for a given
+// team. Stored in localStorage (not just an in-memory flag) because bingo is
+// achieved by the ORGANIZER approving the final tile, not by anything the
+// participant does — so there's usually a gap between "line completed" and
+// "approved," during which the phone can lock, the tab can get suspended or
+// reloaded, etc. An in-memory-only flag gets wiped by that and the popup
+// would silently never show. This survives all of that, per device.
+function hasSeenBingoPopup_(teamName){
+  try { return localStorage.getItem('bingoSeen_' + teamName) === '1'; }
+  catch(e) { return false; }
+}
+function markBingoPopupSeen_(teamName){
+  try { localStorage.setItem('bingoSeen_' + teamName, '1'); }
+  catch(e) { /* ignore, e.g. storage disabled */ }
+}
 
 async function callApi(action, payload){
   payload = payload || {};
@@ -290,18 +306,15 @@ async function renderTeamPlay(){
     state.elapsedTicker = setInterval(() => updateElapsedLabel(startMs), 1000);
   }
 
-  // Bingo detection: only pop the celebration the moment it transitions
-  // to achieved during this session (not on first load, to avoid
-  // re-showing it every time someone reopens their board after already winning).
-  if (data && data.bingoAchieved){
-    if (!state.hasFetchedOnce){
-      state.bingoShown = true; // already won before this page load — don't replay the popup
-    } else if (!state.bingoShown){
-      state.bingoShown = true;
-      showBingoPopup(data.bingoSeconds);
-    }
+  // Bingo detection: show the celebration once per device for this team,
+  // the first time we see bingoAchieved=true — whether that's on this exact
+  // poll or because we're reopening the page after it happened while we
+  // were away. Tracked in localStorage so it survives reloads (see
+  // hasSeenBingoPopup_ above for why that matters here).
+  if (data && data.bingoAchieved && !hasSeenBingoPopup_(state.teamName)){
+    markBingoPopupSeen_(state.teamName);
+    showBingoPopup(data.bingoSeconds);
   }
-  state.hasFetchedOnce = true;
 
   document.getElementById('bingoCloseBtn').onclick = () => {
     document.getElementById('bingoOverlay').style.display = 'none';
