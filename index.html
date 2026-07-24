@@ -145,7 +145,11 @@ const TASKS = [
 const FREE_INDEX = 12;
 
 const app = document.getElementById('app');
-let state = { view: 'team-select', teamName: null };
+const urlParams = new URLSearchParams(window.location.search);
+const savedTeam = urlParams.get('team');
+let state = savedTeam
+  ? { view: 'team-play', teamName: savedTeam }
+  : { view: 'team-select', teamName: null };
 
 async function callApi(action, payload){
   payload = payload || {};
@@ -184,10 +188,10 @@ async function renderTeamSelect(){
     <h1>NUS Chem Bingo</h1>
     <div class="sub">Homecoming Lunch Edition</div>
     <div class="card">
-      <label>Enter a new team name</label>
-      <input type="text" id="newTeamInput" placeholder="e.g. Team Beaker">
+      <label>Enter your name</label>
+      <input type="text" id="newTeamInput" placeholder="e.g. John Tan">
       <button class="btn" id="createBtn">Start / Continue</button>
-      <p id="existingLabel" style="margin:14px 0 0 0;font-weight:700;display:none;">Or select existing team:</p>
+      <p id="existingLabel" style="margin:14px 0 0 0;font-weight:700;display:none;">Or select your name:</p>
       <div id="teamList"></div>
     </div>
   `;
@@ -199,7 +203,11 @@ async function renderTeamSelect(){
       const div = document.createElement('div');
       div.className = 'team-list-item';
       div.innerHTML = `<span>${t}</span><span>&rarr;</span>`;
-      div.onclick = () => { state.teamName = t; state.view = 'team-play'; render(); };
+      div.onclick = () => {
+        state.teamName = t; state.view = 'team-play';
+        history.replaceState(null, '', '?team=' + encodeURIComponent(t));
+        render();
+      };
       listEl.appendChild(div);
     });
   }
@@ -209,7 +217,9 @@ async function renderTeamSelect(){
     const btn = document.getElementById('createBtn');
     btn.disabled = true; btn.textContent = 'Joining...';
     await callApi('createTeam', { teamName: val });
-    state.teamName = val; state.view = 'team-play'; render();
+    state.teamName = val; state.view = 'team-play';
+    history.replaceState(null, '', '?team=' + encodeURIComponent(val));
+    render();
   };
 }
 
@@ -230,7 +240,16 @@ async function renderTeamPlay(){
       <span><i class="dot" style="background:var(--pending)"></i>Pending review</span>
       <span><i class="dot" style="background:var(--approved)"></i>Approved</span>
     </div>
-    <input type="file" accept="image/*" id="fileInput" style="display:none">
+    <input type="file" accept="image/*" capture="environment" id="cameraInput" style="display:none">
+    <input type="file" accept="image/*" id="galleryInput" style="display:none">
+    <div id="pickerOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:10;align-items:flex-end;justify-content:center;">
+      <div style="background:var(--cream);color:var(--ink);width:100%;max-width:640px;border-radius:16px 16px 0 0;padding:18px;">
+        <p style="font-weight:800;margin:0 0 10px 0;" id="pickerTaskLabel"></p>
+        <button class="btn" id="pickCameraBtn">📷 Take Photo</button>
+        <button class="btn secondary" id="pickGalleryBtn">🖼 Choose from Gallery</button>
+        <button class="btn" id="pickCancelBtn" style="background:#999;">Cancel</button>
+      </div>
+    </div>
   `;
   const grid = document.getElementById('grid');
   TASKS.forEach((task, i) => {
@@ -243,23 +262,47 @@ async function renderTeamPlay(){
     div.className = cls;
     div.innerHTML = `${t && t.photoUrl ? `<img src="${t.photoUrl}">` : ''}<span>${task}</span>${t && t.status==='approved' ? '<span class="badge">✅</span>' : ''}${t && t.status==='pending' ? '<span class="badge">⏳</span>' : ''}`;
     if (i !== FREE_INDEX){
-      div.onclick = () => {
-        const input = document.getElementById('fileInput');
-        input.onchange = () => {
-          if (!input.files[0]) return;
-          resizeImage(input.files[0], async (dataUrl) => {
-            div.style.opacity = '0.5';
-            await callApi('submitPhoto', { teamName: state.teamName, tileIndex: i, photoData: dataUrl });
-            renderTeamPlay();
-          });
-          input.value = '';
-        };
-        input.click();
-      };
+      div.onclick = () => openPicker(i, task, div);
     }
     grid.appendChild(div);
   });
-  document.getElementById('back').onclick = () => { state.view = 'team-select'; render(); };
+  document.getElementById('back').onclick = () => {
+    state.view = 'team-select'; state.teamName = null;
+    history.replaceState(null, '', window.location.pathname);
+    render();
+  };
+}
+
+function openPicker(tileIndex, taskText, tileDiv){
+  const overlay = document.getElementById('pickerOverlay');
+  document.getElementById('pickerTaskLabel').textContent = taskText;
+  overlay.style.display = 'flex';
+
+  const cameraInput = document.getElementById('cameraInput');
+  const galleryInput = document.getElementById('galleryInput');
+
+  const handleFile = (input) => {
+    if (!input.files[0]) return;
+    overlay.style.display = 'none';
+    resizeImage(input.files[0], async (dataUrl) => {
+      tileDiv.style.opacity = '0.5';
+      await callApi('submitPhoto', { teamName: state.teamName, tileIndex: tileIndex, photoData: dataUrl });
+      renderTeamPlay();
+    });
+    input.value = '';
+  };
+
+  document.getElementById('pickCameraBtn').onclick = () => {
+    cameraInput.onchange = () => handleFile(cameraInput);
+    cameraInput.click();
+  };
+  document.getElementById('pickGalleryBtn').onclick = () => {
+    galleryInput.onchange = () => handleFile(galleryInput);
+    galleryInput.click();
+  };
+  document.getElementById('pickCancelBtn').onclick = () => {
+    overlay.style.display = 'none';
+  };
 }
 
 function resizeImage(file, cb){
