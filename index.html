@@ -137,7 +137,7 @@ const TASKS = [
   "Eating together",
   "Is wearing the same colored outfit as you",
   "Recreate this pose (see reference bingo card)",
-  "Photo with your favourite element (periodic table outside CBL)",
+  "Photo with someone whose age matches proton number 26",
   "Take a photo forming a heart shape as a group",
   "Recreate this pose (see reference bingo card)",
   "Take a group photo forming your graduating year (e.g. '2026') with your bodies/hands"
@@ -148,8 +148,8 @@ const app = document.getElementById('app');
 const urlParams = new URLSearchParams(window.location.search);
 const savedTeam = urlParams.get('team');
 let state = savedTeam
-  ? { view: 'team-play', teamName: savedTeam }
-  : { view: 'team-select', teamName: null };
+  ? { view: 'team-play', teamName: savedTeam, pollTimer: null, hasFetchedOnce: false, bingoShown: false }
+  : { view: 'team-select', teamName: null, pollTimer: null, hasFetchedOnce: false, bingoShown: false };
 
 async function callApi(action, payload){
   payload = payload || {};
@@ -233,7 +233,7 @@ async function renderTeamPlay(){
   app.innerHTML = `
     <div class="top-nav"><button id="back">&larr; Switch team</button><span>${approvedCount}/25 approved</span></div>
     <h1>${state.teamName}</h1>
-    <div class="sub">Tap a tile to snap &amp; submit a photo</div>
+    <div class="sub" id="elapsedLabel">Tap a tile to snap &amp; submit a photo</div>
     <div class="grid" id="grid"></div>
     <div class="legend">
       <span><i class="dot" style="background:#8a8a8a"></i>Not done</span>
@@ -248,6 +248,15 @@ async function renderTeamPlay(){
         <button class="btn" id="pickCameraBtn">📷 Take Photo</button>
         <button class="btn secondary" id="pickGalleryBtn">🖼 Choose from Gallery</button>
         <button class="btn" id="pickCancelBtn" style="background:#999;">Cancel</button>
+      </div>
+    </div>
+    <div id="bingoOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:20;align-items:center;justify-content:center;text-align:center;padding:20px;">
+      <div style="background:var(--cream);color:var(--ink);border-radius:16px;padding:28px 22px;max-width:420px;">
+        <div style="font-size:2.4rem;">🎉</div>
+        <h2 style="margin:8px 0 4px;color:var(--forest);">Congrats you finished the bingo!</h2>
+        <p style="margin:4px 0 14px;">Thanks for playing!</p>
+        <p id="bingoTimeText" style="font-weight:700;font-size:1.1rem;"></p>
+        <button class="btn" id="bingoCloseBtn">Nice!</button>
       </div>
     </div>
   `;
@@ -267,10 +276,82 @@ async function renderTeamPlay(){
     grid.appendChild(div);
   });
   document.getElementById('back').onclick = () => {
+    stopTeamPolling();
     state.view = 'team-select'; state.teamName = null;
     history.replaceState(null, '', window.location.pathname);
     render();
   };
+
+  // Live elapsed-time display, ticking every second from the server's StartTime.
+  if (data && data.startTime){
+    const startMs = new Date(data.startTime).getTime();
+    updateElapsedLabel(startMs);
+    if (state.elapsedTicker) clearInterval(state.elapsedTicker);
+    state.elapsedTicker = setInterval(() => updateElapsedLabel(startMs), 1000);
+  }
+
+  // Bingo detection: only pop the celebration the moment it transitions
+  // to achieved during this session (not on first load, to avoid
+  // re-showing it every time someone reopens their board after already winning).
+  if (data && data.bingoAchieved){
+    if (!state.hasFetchedOnce){
+      state.bingoShown = true; // already won before this page load — don't replay the popup
+    } else if (!state.bingoShown){
+      state.bingoShown = true;
+      showBingoPopup(data.bingoSeconds);
+    }
+  }
+  state.hasFetchedOnce = true;
+
+  document.getElementById('bingoCloseBtn').onclick = () => {
+    document.getElementById('bingoOverlay').style.display = 'none';
+  };
+
+  startTeamPolling();
+}
+
+function updateElapsedLabel(startMs){
+  const label = document.getElementById('elapsedLabel');
+  if (!label) return;
+  const secs = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
+  label.textContent = 'Time elapsed: ' + formatDuration(secs);
+}
+
+function formatDuration(totalSeconds){
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+function showBingoPopup(seconds){
+  const overlay = document.getElementById('bingoOverlay');
+  const timeText = document.getElementById('bingoTimeText');
+  if (timeText) {
+    timeText.textContent = (seconds !== null && seconds !== undefined)
+      ? `You completed it in ${formatDuration(seconds)}!`
+      : '';
+  }
+  if (overlay) overlay.style.display = 'flex';
+}
+
+function startTeamPolling(){
+  stopTeamPolling();
+  state.pollTimer = setInterval(() => {
+    const picker = document.getElementById('pickerOverlay');
+    const bingo = document.getElementById('bingoOverlay');
+    const pickerOpen = picker && picker.style.display === 'flex';
+    const bingoOpen = bingo && bingo.style.display === 'flex';
+    if (state.view === 'team-play' && !pickerOpen && !bingoOpen) renderTeamPlay();
+  }, 15000);
+}
+function stopTeamPolling(){
+  if (state.pollTimer) clearInterval(state.pollTimer);
+  state.pollTimer = null;
+  if (state.elapsedTicker) clearInterval(state.elapsedTicker);
+  state.elapsedTicker = null;
 }
 
 function openPicker(tileIndex, taskText, tileDiv){
