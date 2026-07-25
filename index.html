@@ -148,36 +148,41 @@ const app = document.getElementById('app');
 const urlParams = new URLSearchParams(window.location.search);
 const savedTeam = urlParams.get('team');
 let state = savedTeam
-  ? { view: 'team-play', teamName: savedTeam, pollTimer: null }
-  : { view: 'team-select', teamName: null, pollTimer: null };
+  ? { view: 'team-play', teamName: savedTeam, pollTimer: null, hasFetchedOnce: false, bingoShown: false }
+  : { view: 'team-select', teamName: null, pollTimer: null, hasFetchedOnce: false, bingoShown: false };
 
-// Whether this browser/device has already shown the bingo popup for a given
-// team. Stored in localStorage (not just an in-memory flag) because bingo is
-// achieved by the ORGANIZER approving the final tile, not by anything the
-// participant does — so there's usually a gap between "line completed" and
-// "approved," during which the phone can lock, the tab can get suspended or
-// reloaded, etc. An in-memory-only flag gets wiped by that and the popup
-// would silently never show. This survives all of that, per device.
-function hasSeenBingoPopup_(teamName){
-  try { return localStorage.getItem('bingoSeen_' + teamName) === '1'; }
-  catch(e) { return false; }
-}
-function markBingoPopupSeen_(teamName){
-  try { localStorage.setItem('bingoSeen_' + teamName, '1'); }
-  catch(e) { /* ignore, e.g. storage disabled */ }
-}
+function sleep_(ms){ return new Promise(resolve => setTimeout(resolve, ms)); }
 
-async function callApi(action, payload){
+// Retries with exponential backoff + jitter on network failure or a
+// {error:'busy'} response (the backend returns 'busy' when it can't
+// grab its write lock within 8s — happens only during real bursts).
+// This is what keeps 50 people submitting around the same moment from
+// all hammering the quota at once; failed attempts space themselves out.
+async function callApi(action, payload, maxRetries){
   payload = payload || {};
-  try{
-    const res = await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      body: JSON.stringify(Object.assign({ action: action }, payload))
-    });
-    return await res.json();
-  }catch(e){
-    console.error('API call failed', e);
-    return { error: 'network' };
+  maxRetries = maxRetries == null ? 4 : maxRetries;
+  for (let attempt = 0; attempt <= maxRetries; attempt++){
+    try{
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify(Object.assign({ action: action }, payload))
+      });
+      const json = await res.json();
+      if (json && json.error === 'busy' && attempt < maxRetries){
+        const base = Math.min(1000 * Math.pow(2, attempt), 8000);
+        await sleep_(base / 2 + Math.random() * base / 2);
+        continue;
+      }
+      return json;
+    }catch(e){
+      if (attempt < maxRetries){
+        const base = Math.min(1000 * Math.pow(2, attempt), 8000);
+        await sleep_(base / 2 + Math.random() * base / 2);
+        continue;
+      }
+      console.error('API call failed after retries', action, e);
+      return { error: 'network' };
+    }
   }
 }
 
@@ -306,15 +311,18 @@ async function renderTeamPlay(){
     state.elapsedTicker = setInterval(() => updateElapsedLabel(startMs), 1000);
   }
 
-  // Bingo detection: show the celebration once per device for this team,
-  // the first time we see bingoAchieved=true — whether that's on this exact
-  // poll or because we're reopening the page after it happened while we
-  // were away. Tracked in localStorage so it survives reloads (see
-  // hasSeenBingoPopup_ above for why that matters here).
-  if (data && data.bingoAchieved && !hasSeenBingoPopup_(state.teamName)){
-    markBingoPopupSeen_(state.teamName);
-    showBingoPopup(data.bingoSeconds);
+  // Bingo detection: only pop the celebration the moment it transitions
+  // to achieved during this session (not on first load, to avoid
+  // re-showing it every time someone reopens their board after already winning).
+  if (data && data.bingoAchieved){
+    if (!state.hasFetchedOnce){
+      state.bingoShown = true; // already won before this page load — don't replay the popup
+    } else if (!state.bingoShown){
+      state.bingoShown = true;
+      showBingoPopup(data.bingoSeconds);
+    }
   }
+  state.hasFetchedOnce = true;
 
   document.getElementById('bingoCloseBtn').onclick = () => {
     document.getElementById('bingoOverlay').style.display = 'none';
@@ -352,13 +360,16 @@ function showBingoPopup(seconds){
 
 function startTeamPolling(){
   stopTeamPolling();
+  // Jittered interval (15-20s) so ~50 clients don't all poll on the
+  // exact same tick and pile up simultaneous requests.
+  const interval = 15000 + Math.random() * 5000;
   state.pollTimer = setInterval(() => {
     const picker = document.getElementById('pickerOverlay');
     const bingo = document.getElementById('bingoOverlay');
     const pickerOpen = picker && picker.style.display === 'flex';
     const bingoOpen = bingo && bingo.style.display === 'flex';
     if (state.view === 'team-play' && !pickerOpen && !bingoOpen) renderTeamPlay();
-  }, 15000);
+  }, interval);
 }
 function stopTeamPolling(){
   if (state.pollTimer) clearInterval(state.pollTimer);
@@ -380,7 +391,11 @@ function openPicker(tileIndex, taskText, tileDiv){
     overlay.style.display = 'none';
     resizeImage(input.files[0], async (dataUrl) => {
       tileDiv.style.opacity = '0.5';
-      await callApi('submitPhoto', { teamName: state.teamName, tileIndex: tileIndex, photoData: dataUrl });
+      const result = await callApi('submitPhoto', { teamName: state.teamName, tileIndex: tileIndex, photoData: dataUrl });
+      if (!result || result.error){
+        showUploadFailed_(tileDiv, dataUrl, tileIndex);
+        return;
+      }
       renderTeamPlay();
     });
     input.value = '';
@@ -396,6 +411,29 @@ function openPicker(tileIndex, taskText, tileDiv){
   };
   document.getElementById('pickCancelBtn').onclick = () => {
     overlay.style.display = 'none';
+  };
+}
+
+// Genuine failure after all retries (rare) — don't just drop the photo
+// silently. Show a clear failed state and let them retry with one tap.
+function showUploadFailed_(tileDiv, dataUrl, tileIndex){
+  tileDiv.style.opacity = '1';
+  tileDiv.style.outline = '3px solid var(--redo)';
+  const old = tileDiv.querySelector('.retry-overlay');
+  if (old) old.remove();
+  const retryBtn = document.createElement('div');
+  retryBtn.className = 'retry-overlay';
+  retryBtn.textContent = '⚠️ Failed — tap to retry';
+  retryBtn.style.cssText = 'position:absolute;inset:0;background:rgba(217,100,95,0.92);color:#fff;font-size:0.6rem;display:flex;align-items:center;justify-content:center;text-align:center;padding:4px;z-index:3;';
+  tileDiv.appendChild(retryBtn);
+  tileDiv.onclick = () => {
+    retryBtn.remove();
+    tileDiv.style.outline = '';
+    tileDiv.style.opacity = '0.5';
+    callApi('submitPhoto', { teamName: state.teamName, tileIndex: tileIndex, photoData: dataUrl }).then((r) => {
+      if (r && !r.error) renderTeamPlay();
+      else showUploadFailed_(tileDiv, dataUrl, tileIndex);
+    });
   };
 }
 
