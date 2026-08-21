@@ -194,7 +194,7 @@ function urlConfigured(){
 function render(){
   if (!urlConfigured()){
     app.innerHTML = `
-      <h1>CSS AGM Bingo</h1>
+      <h1>NUS Chem Bingo</h1>
       <div class="card">
         <p><strong>Setup needed:</strong> this page isn't connected to your Google Sheet yet.</p>
         <p class="warn">Open this file, replace APPS_SCRIPT_URL near the top with your Apps Script Web App URL, and re-publish.</p>
@@ -207,8 +207,8 @@ function render(){
 
 async function renderTeamSelect(){
   app.innerHTML = `
-    <h1>CSS AGM Bingo</h1>
-    <div class="sub">AY26/27 AGM 1 Edition</div>
+    <h1>NUS Chem Bingo</h1>
+    <div class="sub">Homecoming Lunch Edition</div>
     <div class="card">
       <label>Enter your name</label>
       <input type="text" id="newTeamInput" placeholder="e.g. John Tan">
