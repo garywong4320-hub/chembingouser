@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NUS Chem Bingo — Team</title>
+<title>CSS AGM Bingo — Team</title>
 <style>
   :root{
     --forest:#7c8fc4;
@@ -117,31 +117,31 @@
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxe0qcs63ynGIQYnI13dgndPatQuTUPTa525H2T5wtjeFm0lD6pd_OdN2LS9yQB1LeU/exec";
 
 const TASKS = [
-  "A photo with someone you met since Y1SI",
-  "A photo with the event IC",
-  "\"Um AcTuAlLY\" pose",
-  "A photo with a non-graduating person",
-  "Take a photo doing a group cheer, like the last lab session just ended",
+  "Recreate this pose (see reference bingo card)",
+  "A photo with your department head",
+  "\"Erm AcTuAlLY\" pose",
+  "A photo with someone from a diff department from you",
+  "A photo with a new friend you met today",
   "Take a group photo doing a funny pose",
-  "Recreate your \"finally graduating\" pose",
-  "Take a photo with someone who sat near you in your first-ever Chem lecture",
-  "Take a photo recreating your best 'freshman orientation' face vs. now",
-  "A photo with someone of the same age",
-  "Take a photo doing a group toast to graduation",
+  "Take a photo with someone who has the same hobby as you",
+  "Recreate this pose (see reference bingo card)",
+  "Take photo with someone and do \"67\" pose",
+  "Recreate this pose (see reference bingo card)",
+  "Take a photo with someone that is at least 1.8m tall",
   "Recreate this pose (see reference bingo card)",
   "FREE SPACE",
   "Recreate this pose (see reference bingo card)",
-  "A photo with a new friend you met today",
-  "Take a photo hugging a friend goodbye (dramatically)",
-  "Recreate this pose (see reference bingo card)",
-  "A photo with a faculty member",
+  "\"Scuba\" pose",
   "Eating together",
+  "Recreate this pose (see reference bingo card)",
+  "Recreate this pose (see reference bingo card)",
   "Is wearing the same colored outfit as you",
+  "Take a photo with someone you met in Chem Camp",
   "Recreate this pose (see reference bingo card)",
-  "Photo with someone whose age matches proton number 26",
+  "Photo with your favourite element",
+  "Photo with someone from the EXCO team",
   "Take a photo forming a heart shape as a group",
-  "Recreate this pose (see reference bingo card)",
-  "Take a group photo forming your graduating year (e.g. '2026') with your bodies/hands"
+  "Recreate this pose (see reference bingo card)"
 ];
 const FREE_INDEX = 12;
 
@@ -194,7 +194,7 @@ function urlConfigured(){
 function render(){
   if (!urlConfigured()){
     app.innerHTML = `
-      <h1>NUS Chem Bingo</h1>
+      <h1>CSS AGM Bingo</h1>
       <div class="card">
         <p><strong>Setup needed:</strong> this page isn't connected to your Google Sheet yet.</p>
         <p class="warn">Open this file, replace APPS_SCRIPT_URL near the top with your Apps Script Web App URL, and re-publish.</p>
@@ -207,8 +207,8 @@ function render(){
 
 async function renderTeamSelect(){
   app.innerHTML = `
-    <h1>NUS Chem Bingo</h1>
-    <div class="sub">Homecoming Lunch Edition</div>
+    <h1>CSS AGM Bingo</h1>
+    <div class="sub">AY26/27 AGM 1 Edition</div>
     <div class="card">
       <label>Enter your name</label>
       <input type="text" id="newTeamInput" placeholder="e.g. John Tan">
