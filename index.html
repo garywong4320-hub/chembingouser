@@ -155,7 +155,7 @@ function sleep_(ms){ return new Promise(resolve => setTimeout(resolve, ms)); }
 
 async function callApi(action, payload, maxRetries){
   payload = payload || {};
-  maxRetries = maxRetries == null ? 4 : maxRetries;
+  maxRetries = maxRetries == null ? 3 : maxRetries;
   for (let attempt = 0; attempt <= maxRetries; attempt++){
     try{
       const res = await fetch(APPS_SCRIPT_URL, {
@@ -167,14 +167,14 @@ async function callApi(action, payload, maxRetries){
       });
       const json = await res.json();
       if (json && json.error === 'busy' && attempt < maxRetries){
-        const base = Math.min(1000 * Math.pow(2, attempt), 8000);
+        const base = Math.min(800 * Math.pow(2, attempt), 4000);
         await sleep_(base / 2 + Math.random() * base / 2);
         continue;
       }
       return json;
     }catch(e){
       if (attempt < maxRetries){
-        const base = Math.min(1000 * Math.pow(2, attempt), 8000);
+        const base = Math.min(800 * Math.pow(2, attempt), 4000);
         await sleep_(base / 2 + Math.random() * base / 2);
         continue;
       }
@@ -361,8 +361,13 @@ function openPicker(tileIndex, taskText, tileDiv){
   const handleFile = (input) => {
     if (!input.files[0]) return;
     overlay.style.display = 'none';
+    
+    // UI Feedback: Immediately signal uploading state
+    tileDiv.style.opacity = '0.5';
+    const badge = tileDiv.querySelector('.badge');
+    if (badge) badge.textContent = '⏳';
+    
     resizeImage(input.files[0], async (dataUrl) => {
-      tileDiv.style.opacity = '0.5';
       const result = await callApi('submitPhoto', { teamName: state.teamName, tileIndex: tileIndex, photoData: dataUrl });
       if (!result || result.error){
         showUploadFailed_(tileDiv, dataUrl, tileIndex);
@@ -412,14 +417,15 @@ function resizeImage(file, cb){
   reader.onload = e => {
     const img = new Image();
     img.onload = () => {
-      const maxDim = 480;
+      // Optimized thumbnail size and compression to speed up payload transmit
+      const maxDim = 360;
       let w = img.width, h = img.height;
       if (w > h && w > maxDim){ h = h * maxDim / w; w = maxDim; }
       else if (h > maxDim){ w = w * maxDim / h; h = maxDim; }
       const canvas = document.createElement('canvas');
       canvas.width = w; canvas.height = h;
       canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      cb(canvas.toDataURL('image/jpeg', 0.35));
+      cb(canvas.toDataURL('image/jpeg', 0.3));
     };
     img.src = e.target.result;
   };
