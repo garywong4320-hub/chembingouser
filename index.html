@@ -113,7 +113,6 @@
 <div class="wrap" id="app"></div>
 
 <script>
-// PASTE your Apps Script Web App URL here (see AppsScript-Backend.gs setup steps)
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxn_ZMYj-O_z-JOvXQpuel6uVaOG3zFGl3O2KAPuG70vYyyxk8sQZ9FQaTa8erwckNF/exec";
 
 const TASKS = [
@@ -149,16 +148,11 @@ const app = document.getElementById('app');
 const urlParams = new URLSearchParams(window.location.search);
 const savedTeam = urlParams.get('team');
 let state = savedTeam
-  ? { view: 'team-play', teamName: savedTeam, pollTimer: null, hasFetchedOnce: false, bingoShown: false }
-  : { view: 'team-select', teamName: null, pollTimer: null, hasFetchedOnce: false, bingoShown: false };
+  ? { view: 'team-play', teamName: savedTeam, hasFetchedOnce: false, bingoShown: false }
+  : { view: 'team-select', teamName: null, hasFetchedOnce: false, bingoShown: false };
 
 function sleep_(ms){ return new Promise(resolve => setTimeout(resolve, ms)); }
 
-// Retries with exponential backoff + jitter on network failure or a
-// {error:'busy'} response (the backend returns 'busy' when it can't
-// grab its write lock within 8s — happens only during real bursts).
-// This is what keeps 50 people submitting around the same moment from
-// all hammering the quota at once; failed attempts space themselves out.
 async function callApi(action, payload, maxRetries){
   payload = payload || {};
   maxRetries = maxRetries == null ? 4 : maxRetries;
@@ -166,6 +160,9 @@ async function callApi(action, payload, maxRetries){
     try{
       const res = await fetch(APPS_SCRIPT_URL, {
         method: 'POST',
+        mode: 'cors',
+        redirect: 'follow',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(Object.assign({ action: action }, payload))
       });
       const json = await res.json();
@@ -298,13 +295,12 @@ async function renderTeamPlay(){
     grid.appendChild(div);
   });
   document.getElementById('back').onclick = () => {
-    stopTeamPolling();
+    if (state.elapsedTicker) clearInterval(state.elapsedTicker);
     state.view = 'team-select'; state.teamName = null;
     history.replaceState(null, '', window.location.pathname);
     render();
   };
 
-  // Live elapsed-time display, ticking every second from the server's StartTime.
   if (data && data.startTime){
     const startMs = new Date(data.startTime).getTime();
     updateElapsedLabel(startMs);
@@ -312,12 +308,9 @@ async function renderTeamPlay(){
     state.elapsedTicker = setInterval(() => updateElapsedLabel(startMs), 1000);
   }
 
-  // Bingo detection: only pop the celebration the moment it transitions
-  // to achieved during this session (not on first load, to avoid
-  // re-showing it every time someone reopens their board after already winning).
   if (data && data.bingoAchieved){
     if (!state.hasFetchedOnce){
-      state.bingoShown = true; // already won before this page load — don't replay the popup
+      state.bingoShown = true;
     } else if (!state.bingoShown){
       state.bingoShown = true;
       showBingoPopup(data.bingoSeconds);
@@ -328,8 +321,6 @@ async function renderTeamPlay(){
   document.getElementById('bingoCloseBtn').onclick = () => {
     document.getElementById('bingoOverlay').style.display = 'none';
   };
-
-  startTeamPolling();
 }
 
 function updateElapsedLabel(startMs){
@@ -357,26 +348,6 @@ function showBingoPopup(seconds){
       : '';
   }
   if (overlay) overlay.style.display = 'flex';
-}
-
-function startTeamPolling(){
-  stopTeamPolling();
-  // Jittered interval (15-20s) so ~50 clients don't all poll on the
-  // exact same tick and pile up simultaneous requests.
-  const interval = 15000 + Math.random() * 5000;
-  state.pollTimer = setInterval(() => {
-    const picker = document.getElementById('pickerOverlay');
-    const bingo = document.getElementById('bingoOverlay');
-    const pickerOpen = picker && picker.style.display === 'flex';
-    const bingoOpen = bingo && bingo.style.display === 'flex';
-    if (state.view === 'team-play' && !pickerOpen && !bingoOpen) renderTeamPlay();
-  }, interval);
-}
-function stopTeamPolling(){
-  if (state.pollTimer) clearInterval(state.pollTimer);
-  state.pollTimer = null;
-  if (state.elapsedTicker) clearInterval(state.elapsedTicker);
-  state.elapsedTicker = null;
 }
 
 function openPicker(tileIndex, taskText, tileDiv){
@@ -415,8 +386,6 @@ function openPicker(tileIndex, taskText, tileDiv){
   };
 }
 
-// Genuine failure after all retries (rare) — don't just drop the photo
-// silently. Show a clear failed state and let them retry with one tap.
 function showUploadFailed_(tileDiv, dataUrl, tileIndex){
   tileDiv.style.opacity = '1';
   tileDiv.style.outline = '3px solid var(--redo)';
@@ -443,14 +412,14 @@ function resizeImage(file, cb){
   reader.onload = e => {
     const img = new Image();
     img.onload = () => {
-      const maxDim = 640;
+      const maxDim = 480;
       let w = img.width, h = img.height;
       if (w > h && w > maxDim){ h = h * maxDim / w; w = maxDim; }
       else if (h > maxDim){ w = w * maxDim / h; h = maxDim; }
       const canvas = document.createElement('canvas');
       canvas.width = w; canvas.height = h;
       canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      cb(canvas.toDataURL('image/jpeg', 0.55));
+      cb(canvas.toDataURL('image/jpeg', 0.35));
     };
     img.src = e.target.result;
   };
