@@ -155,26 +155,25 @@ function sleep_(ms){ return new Promise(resolve => setTimeout(resolve, ms)); }
 
 async function callApi(action, payload, maxRetries){
   payload = payload || {};
-  maxRetries = maxRetries == null ? 3 : maxRetries;
+  maxRetries = maxRetries == null ? 4 : maxRetries;
   for (let attempt = 0; attempt <= maxRetries; attempt++){
     try{
       const res = await fetch(APPS_SCRIPT_URL, {
         method: 'POST',
-        mode: 'cors',
         redirect: 'follow',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(Object.assign({ action: action }, payload))
       });
       const json = await res.json();
       if (json && json.error === 'busy' && attempt < maxRetries){
-        const base = Math.min(800 * Math.pow(2, attempt), 4000);
+        const base = Math.min(1000 * Math.pow(2, attempt), 8000);
         await sleep_(base / 2 + Math.random() * base / 2);
         continue;
       }
       return json;
     }catch(e){
       if (attempt < maxRetries){
-        const base = Math.min(800 * Math.pow(2, attempt), 4000);
+        const base = Math.min(1000 * Math.pow(2, attempt), 8000);
         await sleep_(base / 2 + Math.random() * base / 2);
         continue;
       }
@@ -361,13 +360,8 @@ function openPicker(tileIndex, taskText, tileDiv){
   const handleFile = (input) => {
     if (!input.files[0]) return;
     overlay.style.display = 'none';
-    
-    // UI Feedback: Immediately signal uploading state
-    tileDiv.style.opacity = '0.5';
-    const badge = tileDiv.querySelector('.badge');
-    if (badge) badge.textContent = '⏳';
-    
     resizeImage(input.files[0], async (dataUrl) => {
+      tileDiv.style.opacity = '0.5';
       const result = await callApi('submitPhoto', { teamName: state.teamName, tileIndex: tileIndex, photoData: dataUrl });
       if (!result || result.error){
         showUploadFailed_(tileDiv, dataUrl, tileIndex);
@@ -417,14 +411,14 @@ function resizeImage(file, cb){
   reader.onload = e => {
     const img = new Image();
     img.onload = () => {
-      // Optimized thumbnail size and compression to speed up payload transmit
-      const maxDim = 360;
+      const maxDim = 400;
       let w = img.width, h = img.height;
-      if (w > h && w > maxDim){ h = h * maxDim / w; w = maxDim; }
-      else if (h > maxDim){ w = w * maxDim / h; h = maxDim; }
+      if (w > h && w > maxDim){ h = Math.round(h * maxDim / w); w = maxDim; }
+      else if (h > maxDim){ w = Math.round(w * maxDim / h); h = maxDim; }
       const canvas = document.createElement('canvas');
       canvas.width = w; canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
       cb(canvas.toDataURL('image/jpeg', 0.3));
     };
     img.src = e.target.result;
